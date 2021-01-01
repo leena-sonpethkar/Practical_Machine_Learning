@@ -176,7 +176,7 @@ ooseA3
 The estimated accuracy rate of the GBM model is 0.975527 and the estimated out-of-sample error is 0.0244.
 
 # Application of the best model to the validation data
-**Post comparing the accuracy rate values of all above three models, result is the ‘Random Forest’ model is best fit. Hence will use it on the validation data**
+**Post comparing the accuracy rate values of all above three models, result is the ‘Random Forest’ model is best fit.** Hence will use it on the validation data.
 ```{r, echo=TRUE}
 ResultVal <- predict(modRF1, newdata=validData)
 ResultVal
