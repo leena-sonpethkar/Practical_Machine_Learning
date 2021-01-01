@@ -1,0 +1,183 @@
+---
+title: "Prediction Assignment (Practical Machine Learning) - How Exercise Performed"
+author: "Leena Sonpethkar"
+date: "December 30, 2020"
+output: html_document
+---
+
+## Overview
+Using devices such as Jawbone Up, Nike FuelBand, and Fitbit it is now possible to collect a large amount of data about personal activity relatively inexpensively. These type of devices are part of the quantified self movement – a group of enthusiasts who take measurements about themselves regularly to improve their health, to find patterns in their behavior, or because they are tech geeks. One thing that people regularly do is quantify how much of a particular activity they do, but they rarely quantify how well they do it. 
+
+The purpose of this project is to use data from accelerometers on the belt, forearm, arm, and dumbell of 6 participants. They were asked to perform barbell lifts correctly and 
+incorrectly in 5 different ways.
+The goal of this project is to predict the manner in which they did the exercise. 
+
+The data consists of a Training data and a Test data. 
+Test data will be used to validate the selected model.
+
+## Loading Dependencies & Libraries
+
+```{r, echo=TRUE}
+library(caret)
+library(rpart)
+library(rpart.plot)
+library(RColorBrewer)
+library(rattle)
+library(randomForest)
+library(corrplot)
+library(gbm)
+```
+
+## Data Loading and Exploring
+
+```{r, echo=TRUE}
+#Read data using read.csv
+train_in <- read.csv('pml-training.csv', header=TRUE)
+valid_in <- read.csv('pml-testing.csv', header=TRUE)
+dim(train_in)
+dim(valid_in)
+```
+There are total 19622 observations with 160 variables in the Training dataset, while our test dataset which will be used to validate model has 20 observations.
+
+## Cleaning the input data
+We remove the variables that contains missing values. Note along the cleaning process we display the dimension of the reduced dataset
+```{r, echo=TRUE}
+trainData<- train_in[, colSums(is.na(train_in)) == 0]
+validData <- valid_in[, colSums(is.na(valid_in)) == 0]
+dim(trainData)
+dim(validData)
+```
+Remove the first seven variables as they have less impact on the outcome "classe"
+```{r, echo=TRUE}
+trainData <- trainData[, -c(1:7)]
+validData <- validData[, -c(1:7)]
+dim(trainData)
+dim(validData)
+```
+# Prepare Prediction Dataset
+Split the data for prediction: training data into 70% as train data and 30% as test data. This splitting will help to compute the out-of-sample errors.
+The test data renamed initially as valid_in (validate data),will be used later to test the prodction algorithm on the 20 cases.
+```{r, echo=TRUE}
+set.seed(123456) 
+inTrain <- createDataPartition(trainData$classe, p = 0.7, list = FALSE)
+trainData <- trainData[inTrain, ]
+testData <- trainData[-inTrain, ]
+dim(trainData)
+dim(testData)
+```
+Clean further to remove the variables that are near-zero-variance
+```{r, echo=TRUE}
+NZV <- nearZeroVar(trainData)
+trainData <- trainData[, -NZV]
+testData  <- testData[, -NZV]
+dim(trainData)
+dim(testData)
+```
+Total 53 variables for prediction exercise
+The following correlation plot uses the following parameters (source:CRAN Package ‘corrplot’) “FPC”: the first principal component order. “AOE”: the angular order tl.cex Numeric, for the size of text label (variable names) tl.col The color of text label.
+```{r, echo=TRUE}
+cor_mat <- cor(trainData[, -53])
+corrplot(cor_mat, order = "FPC", method = "color", type = "upper", tl.cex = 0.8, tl.col = rgb(0, 0, 0))
+
+```
+
+In the corrplot graph the correlated predictors (variables ) are those with a dark color intersection.
+
+Obtain the names of highly correlated attributes
+we use the findCorrelation function to search for highly correlated attributes with a cut off equal to 0.75
+
+```{r, echo=TRUE}
+highlyCorrelated = findCorrelation(cor_mat, cutoff=0.75)
+names(trainData)[highlyCorrelated]
+```
+# Building Prediction Models
+
+Below algorithms will be used to predict the outcome.
+
+  1. Classification Trees
+  2. Random Forests
+  3. Generalized Boosted Model
+
+## Prediction with Classification Trees
+
+```{r, echo=TRUE}
+set.seed(12341)
+#Obtain the model
+decisionTreeMod1 <- rpart(classe ~ ., data=trainData, method="class")
+#Use fancyRpartPlot() function to plot the classification tree as a dendogram.
+fancyRpartPlot(decisionTreeMod1)
+```
+
+Validate the model “decisionTreeMod1” on the testData.
+```{r, echo=TRUE}
+predictTreeMod1 <- predict(decisionTreeMod1, testData, type = "class")
+```
+Estimate the performance of the model on the validation dataset.
+```{r, echo=TRUE}
+cmtree <- confusionMatrix(predictTreeMod1, testData$classe)
+cmtree
+```
+### Plot matrix results
+```{r, echo=TRUE}
+plot(cmtree$table, col = cmtree$byClass, 
+     main = paste("Decision Tree - Accuracy =", round(cmtree$overall['Accuracy'], 4)))
+accuracyA1 <- postResample(predictTreeMod1, testData$classe)
+accuracyA1
+
+ooseA1 <- 1 - as.numeric(confusionMatrix(testData$classe, predictTreeMod1)$overall[1])
+ooseA1
+```
+The estimated accuracy rate of the Classification Tree model is .7638 and the estimated out-of-sample error is .2362
+
+## Prediction with Random Forest
+```{r, echo=TRUE}
+#Determine the model using Random Forest
+controlRF <- trainControl(method="cv", number=3, verboseIter=FALSE)
+modRF1 <- train(classe ~ ., data=trainData, method="rf", trControl=controlRF)
+modRF1$finalModel
+```
+Validate the model “modRF1” on the testData.
+```{r, echo=TRUE}
+predictRF1 <- predict(modRF1, newdata=testData)
+cmrf <- confusionMatrix(predictRF1, testData$classe)
+cmrf
+accuracyA2 <- postResample(predictRF1, testData$classe)
+accuracyA2
+ooseA2 <- 1 - as.numeric(confusionMatrix(testData$classe, predictRF1)$overall[1])
+ooseA2
+```
+The estimated accuracy rate of the Random Forest model is very high i.e. 1 and the estimated out-of-sample error is 0****; Possibly due to overfitting.
+Plot the model
+```{r, echo=TRUE}
+plot(modRF1)
+plot(cmrf$table, col = cmrf$byClass, main = paste("Random Forest Confusion Matrix: Accuracy =", round(cmrf$overall['Accuracy'], 4)))
+```
+
+## Prediction with Generalized Boosted Regression Models
+```{r, echo=TRUE}
+set.seed(12342)
+controlGBM <- trainControl(method = "repeatedcv", number = 5, repeats = 1)
+modGBM  <- train(classe ~ ., data=trainData, method = "gbm", trControl = controlGBM, verbose = FALSE)
+modGBM$finalModel
+# print model summary
+print(modGBM)
+```
+Validate the GBM model “modGBM” on the testData.
+```{r, echo=TRUE}
+predictGBM <- predict(modGBM, newdata=testData)
+cmGBM <- confusionMatrix(predictGBM, testData$classe)
+cmGBM
+
+accuracyA3 <- postResample(predictGBM, testData$classe)
+accuracyA3
+ooseA3 <- 1 - as.numeric(confusionMatrix(testData$classe, predictGBM)$overall[1])
+ooseA3
+```
+The estimated accuracy rate of the GBM model is 0.975527 and the estimated out-of-sample error is 0.0244.
+
+# Application of the best model to the validation data
+**Post comparing the accuracy rate values of all above three models, result is the ‘Random Forest’ model is best fit. Hence will use it on the validation data**
+```{r, echo=TRUE}
+ResultVal <- predict(modRF1, newdata=validData)
+ResultVal
+```
